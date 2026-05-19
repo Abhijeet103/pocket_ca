@@ -1,11 +1,10 @@
 streamlit
 llama-index
 llama-index-llms-openai
-llama-index-embeddings-openai
 llama-index-readers-file
 langchain
 langchain-openai
-chromadb
 pymupdf
 python-dotenv
 openai
+neo4j

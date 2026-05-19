@@ -8,7 +8,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAG_DIR = BASE_DIR / "rag"
 DATA_DIR = BASE_DIR / "data"
 STORAGE_DIR = BASE_DIR / "storage"
-INDEX_STORAGE_DIR = STORAGE_DIR / "index"
 CHUNK_CATALOG_PATH = STORAGE_DIR / "chunk_catalog.jsonl"
 INGESTION_MANIFEST_PATH = STORAGE_DIR / "ingestion_manifest.json"
 USER_PROFILE_STORE_PATH = STORAGE_DIR / "user_profiles.json"
@@ -19,12 +18,25 @@ SUPPORTED_SOURCE_SUFFIXES = {".pdf"}
 
 CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "900"))
 CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "150"))
-SEMANTIC_TOP_K = int(os.getenv("RAG_SEMANTIC_TOP_K", "6"))
-KEYWORD_TOP_K = int(os.getenv("RAG_KEYWORD_TOP_K", "6"))
-HYBRID_TOP_K = int(os.getenv("RAG_HYBRID_TOP_K", "8"))
+MAX_KEYWORDS_PER_CHUNK = int(os.getenv("RAG_MAX_KEYWORDS_PER_CHUNK", "10"))
+
+GRAPH_TEXT_TOP_K = int(os.getenv("RAG_GRAPH_TEXT_TOP_K", "6"))
+GRAPH_SECTION_TOP_K = int(os.getenv("RAG_GRAPH_SECTION_TOP_K", "4"))
+GRAPH_REFERENCE_TOP_K = int(os.getenv("RAG_GRAPH_REFERENCE_TOP_K", "4"))
+GRAPH_NEIGHBOR_EXPANSION_TOP_K = int(
+    os.getenv("RAG_GRAPH_NEIGHBOR_EXPANSION_TOP_K", "1")
+)
+GRAPH_KEYWORD_EXPANSION_TOP_K = int(
+    os.getenv("RAG_GRAPH_KEYWORD_EXPANSION_TOP_K", "1")
+)
+GRAPH_FINAL_TOP_K = int(os.getenv("RAG_GRAPH_FINAL_TOP_K", "8"))
+
+NEO4J_URI = os.getenv("NEO4J_URI", "")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
+NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
 DEFAULT_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gpt-4.1-mini")
-DEFAULT_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 DEFAULT_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", DEFAULT_LLM_MODEL)
 DEFAULT_RESPONSE_MODE = os.getenv("RAG_RESPONSE_MODE", "compact")
 DEFAULT_CHAT_HISTORY_TURNS = int(os.getenv("CHAT_HISTORY_TURNS", "12"))

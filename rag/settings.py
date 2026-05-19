@@ -5,16 +5,13 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 from llama_index.core import Settings
-from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from openai import OpenAI as OpenAIClient
 
 from rag.config import (
     BASE_DIR,
     DEFAULT_CHAT_MODEL,
-    DEFAULT_EMBED_MODEL,
     DEFAULT_LLM_MODEL,
-    INDEX_STORAGE_DIR,
     STORAGE_DIR,
     SYSTEM_PROMPT_PATH,
 )
@@ -36,7 +33,6 @@ load_dotenv(BASE_DIR / ".env")
 
 def ensure_storage_dirs() -> None:
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    INDEX_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def require_openai_key() -> None:
@@ -53,12 +49,6 @@ def load_system_prompt() -> str:
 
     prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
     return prompt or FALLBACK_SYSTEM_PROMPT
-
-
-@lru_cache(maxsize=1)
-def get_embed_model() -> OpenAIEmbedding:
-    require_openai_key()
-    return OpenAIEmbedding(model=DEFAULT_EMBED_MODEL)
 
 
 @lru_cache(maxsize=1)
@@ -87,4 +77,3 @@ def get_chat_model_name() -> str:
 def configure_settings() -> None:
     ensure_storage_dirs()
     Settings.llm = get_llm()
-    Settings.embed_model = get_embed_model()

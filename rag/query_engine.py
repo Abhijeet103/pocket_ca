@@ -8,14 +8,14 @@ from llama_index.core import get_response_synthesizer
 from rag.citation_builder import format_citations, prepare_citation_context
 from rag.config import DEFAULT_RESPONSE_MODE
 from rag.models import QueryResult
-from rag.retriever import get_hybrid_retriever
+from rag.retriever import get_graph_retriever
 from rag.settings import configure_settings, get_llm
 
 
 class TaxLawQueryEngine:
     def __init__(self, retriever=None, llm=None) -> None:
         configure_settings()
-        self._retriever = retriever or get_hybrid_retriever()
+        self._retriever = retriever or get_graph_retriever()
         self._llm = llm or get_llm()
         self._response_synthesizer = get_response_synthesizer(
             llm=self._llm,
@@ -29,7 +29,7 @@ class TaxLawQueryEngine:
                 question=question,
                 answer=(
                     "I could not retrieve relevant tax-law material for that question. "
-                    "Please ingest source documents first or broaden the query."
+                    "Please ingest the graph corpus first or broaden the query."
                 ),
                 citations=[],
                 retrieved_chunks=0,
@@ -64,7 +64,7 @@ def reset_query_engine_cache() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Query the Indian tax-law RAG engine.")
+    parser = argparse.ArgumentParser(description="Query the Indian tax-law graph RAG engine.")
     parser.add_argument("question", help="Question to ask against the ingested corpus.")
     args = parser.parse_args()
 
