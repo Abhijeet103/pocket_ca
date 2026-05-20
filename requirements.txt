@@ -8,3 +8,8 @@ pymupdf
 python-dotenv
 openai
 neo4j
+fastapi
+apscheduler
+uvicorn
+sqlalchemy
+psycopg[binary]

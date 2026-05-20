@@ -36,6 +36,9 @@ class TaxLawGraphStore:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
+# Graph scehma
+
+
     def ensure_schema(self) -> None:
         statements = [
             "CREATE CONSTRAINT document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE",
@@ -69,6 +72,7 @@ class TaxLawGraphStore:
             session.run(cypher).consume()
 
     def ingest_documents(self, documents: list[dict[str, Any]]) -> None:
+
         document_query = """
         MERGE (d:Document {id: $document_id})
         SET d.name = $name,
@@ -297,6 +301,8 @@ class TaxLawGraphStore:
             result = session.run(cypher, chunk_ids=chunk_ids)
             return [record.data() for record in result]
 
+
+
     def fetch_neighbor_chunk_ids(
         self,
         chunk_ids: list[str],
@@ -325,6 +331,9 @@ class TaxLawGraphStore:
                 per_seed_limit=per_seed_limit,
             )
             return [record["chunk_id"] for record in result]
+
+
+
 
     def fetch_shared_keyword_chunk_ids(
         self,

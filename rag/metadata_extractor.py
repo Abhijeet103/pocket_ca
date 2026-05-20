@@ -14,6 +14,7 @@ def _slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "unknown"
 
 
+
 def infer_document_type(file_path: str | Path) -> str:
     path = Path(file_path)
     lower_name = path.name.lower()

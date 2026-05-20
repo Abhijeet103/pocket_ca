@@ -4,12 +4,16 @@ import argparse
 import json
 from typing import Any
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_openai import ChatOpenAI
+
 from rag.chat_memory import ChatSessionStore
+from rag.chat_tools import build_chat_tools
 from rag.config import DEFAULT_CHAT_HISTORY_TURNS, DEFAULT_CHAT_TOOL_STEPS
 from rag.models import UserTaxProfile
 from rag.profile_store import UserProfileStore
 from rag.query_engine import answer_question
-from rag.settings import get_chat_model_name, get_openai_chat_client, require_openai_key
+from rag.settings import get_chat_model_name, require_openai_key
 from rag.tax_tools import (
     calculate_tax,
     compare_old_vs_new_regime,
@@ -73,6 +77,14 @@ def _json_dumps(payload: Any) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=True)
 
 
+def _serialize_tool_result(payload: Any) -> str:
+    if isinstance(payload, (dict, list)):
+        return _json_dumps(payload)
+    if payload is None:
+        return "null"
+    return str(payload)
+
+
 def _profile_snapshot(profile: UserTaxProfile) -> str:
     relevant = {
         "user_id": profile.user_id,
@@ -117,6 +129,24 @@ def _format_rag_sources(tool_result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part).strip()
+    return str(content or "")
+
+
 class TaxChatbot:
     def __init__(
         self,
@@ -137,8 +167,18 @@ class TaxChatbot:
             user_id=user_id,
             session_id=session_id,
         )
-        self._client = get_openai_chat_client()
         self._model = get_chat_model_name()
+        self._llm = ChatOpenAI(
+            model=self._model,
+            temperature=0.1,
+            reasoning_effort="low",
+        )
+        self._tools = build_chat_tools(self)
+        self._tools_by_name = {tool.name: tool for tool in self._tools}
+        self._tool_enabled_llm = self._llm.bind_tools(
+            self._tools,
+            parallel_tool_calls=False,
+        )
 
     @property
     def session_id(self) -> str:
@@ -153,7 +193,7 @@ class TaxChatbot:
             max_turns=self._history_turns,
         )
 
-    def _build_messages(self) -> list[dict[str, Any]]:
+    def _build_messages(self) -> list[Any]:
         profile = self.get_profile()
 
         system_content = (
@@ -161,128 +201,16 @@ class TaxChatbot:
             f"Current user profile:\n{_profile_snapshot(profile)}"
         )
 
-        messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
-        messages.extend(self._session_store.recent_messages(self._session.session_id, self._history_turns))
+        messages: list[Any] = [SystemMessage(content=system_content)]
+        for turn in self._session_store.recent_messages(
+            self._session.session_id,
+            self._history_turns,
+        ):
+            if turn["role"] == "user":
+                messages.append(HumanMessage(content=turn["content"]))
+            elif turn["role"] == "assistant":
+                messages.append(AIMessage(content=turn["content"]))
         return messages
-
-    def _tool_definitions(self) -> list[dict[str, Any]]:
-        profile_properties: dict[str, Any] = {
-            "full_name": {"type": "string"},
-            "profession_type": {
-                "type": "string",
-                "enum": ["salaried", "freelancer", "business", "mixed", "unknown"],
-            },
-            "tax_regime": {"type": "string", "enum": ["old", "new", "unknown"]},
-            "financial_year": {"type": "string"},
-            "assessment_year": {"type": "string"},
-            "age": {"type": "integer"},
-            "salary_income": {"type": "number"},
-            "pension_income": {"type": "number"},
-            "freelance_receipts": {"type": "number"},
-            "freelance_expenses": {"type": "number"},
-            "business_receipts": {"type": "number"},
-            "business_expenses": {"type": "number"},
-            "interest_income": {"type": "number"},
-            "savings_interest_income": {"type": "number"},
-            "fixed_deposit_interest_income": {"type": "number"},
-            "rental_income": {"type": "number"},
-            "other_income": {"type": "number"},
-            "capital_gains_special_rate": {"type": "number"},
-            "use_presumptive_profession": {"type": "boolean"},
-            "use_presumptive_business": {"type": "boolean"},
-            "house_property_interest_self_occupied": {"type": "number"},
-            "employer_nps_contribution": {"type": "number"},
-            "section_80c_total": {"type": "number"},
-            "section_80ccd1b": {"type": "number"},
-            "section_80d_self_family": {"type": "number"},
-            "section_80d_parents": {"type": "number"},
-            "section_80e_interest": {"type": "number"},
-            "section_80g_donations": {"type": "number"},
-            "section_80cch_contribution": {"type": "number"},
-            "parents_are_senior_citizens": {"type": "boolean"},
-            "notes_to_add": {"type": "array", "items": {"type": "string"}},
-            "known_facts_to_add": {"type": "array", "items": {"type": "string"}},
-        }
-
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_user_profile",
-                    "description": "Fetch the current stored tax profile for this user.",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "update_user_profile",
-                    "description": "Update the stored tax profile using facts the user has given in conversation.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": profile_properties,
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "answer_tax_law_question",
-                    "description": "Use the RAG engine to answer Indian tax-law questions with citations.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "question": {
-                                "type": "string",
-                                "description": "The tax-law question to answer using retrieved sources.",
-                            }
-                        },
-                        "required": ["question"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "calculate_tax",
-                    "description": "Calculate tax for the current user profile or for a requested regime.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "regime": {
-                                "type": "string",
-                                "enum": ["old", "new"],
-                                "description": "Optional regime override.",
-                            }
-                        },
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "compare_old_vs_new_regime",
-                    "description": "Compare tax between the old and new regime for the current user profile.",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "suggest_applicable_deductions",
-                    "description": "Suggest which deductions may apply for the current user profile.",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "list_missing_information",
-                    "description": "List missing profile fields needed for a more accurate personalised tax answer.",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            },
-        ]
 
     def _merge_list_field(
         self,
@@ -303,62 +231,51 @@ class TaxChatbot:
             allowed_updates["tax_regime"] = str(allowed_updates["tax_regime"]).lower()
         return allowed_updates
 
-    def _execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if name == "get_user_profile":
-            profile = self.get_profile()
-            return profile.model_dump(mode="json")
+    def apply_profile_updates(self, raw_updates: dict[str, Any]) -> dict[str, Any]:
+        current_profile = self.get_profile()
+        updates = self._sanitize_profile_updates(raw_updates)
+        merged_payload = current_profile.model_dump(mode="json")
+        merged_payload.update(updates)
+        merged_payload["notes"] = self._merge_list_field(
+            current_profile.notes,
+            raw_updates.get("notes_to_add"),
+        )
+        merged_payload["known_facts"] = self._merge_list_field(
+            current_profile.known_facts,
+            raw_updates.get("known_facts_to_add"),
+        )
+        merged = UserTaxProfile.model_validate(merged_payload)
+        saved = self._profile_store.save(merged)
+        return {
+            "status": "updated",
+            "profile": saved.model_dump(mode="json"),
+        }
 
-        if name == "update_user_profile":
-            current_profile = self.get_profile()
-            updates = self._sanitize_profile_updates(arguments)
-            merged_payload = current_profile.model_dump(mode="json")
-            merged_payload.update(updates)
-            merged_payload["notes"] = self._merge_list_field(
-                current_profile.notes,
-                arguments.get("notes_to_add"),
-            )
-            merged_payload["known_facts"] = self._merge_list_field(
-                current_profile.known_facts,
-                arguments.get("known_facts_to_add"),
-            )
-            merged = UserTaxProfile.model_validate(merged_payload)
-            saved = self._profile_store.save(merged)
-            return {
-                "status": "updated",
-                "profile": saved.model_dump(mode="json"),
-            }
+    def answer_tax_law_question(self, question: str) -> dict[str, Any]:
+        return answer_question(question).model_dump(mode="json")
 
-        if name == "answer_tax_law_question":
-            question = arguments["question"]
-            result = answer_question(question)
-            return result.model_dump(mode="json")
+    def calculate_tax_for_profile(self, regime: str | None = None) -> dict[str, Any]:
+        profile = self.get_profile()
+        result = calculate_tax(profile, regime=regime)
+        return {
+            "calculation": result.model_dump(mode="json"),
+            "breakdown_text": explain_tax_breakdown(result),
+        }
 
-        if name == "calculate_tax":
-            profile = self.get_profile()
-            regime = arguments.get("regime")
-            result = calculate_tax(profile, regime=regime)
-            return {
-                "calculation": result.model_dump(mode="json"),
-                "breakdown_text": explain_tax_breakdown(result),
-            }
+    def compare_tax_regimes(self) -> dict[str, Any]:
+        profile = self.get_profile()
+        return compare_old_vs_new_regime(profile).model_dump(mode="json")
 
-        if name == "compare_old_vs_new_regime":
-            profile = self.get_profile()
-            result = compare_old_vs_new_regime(profile)
-            return result.model_dump(mode="json")
+    def suggest_deductions(self) -> dict[str, Any]:
+        profile = self.get_profile()
+        deductions = suggest_applicable_deductions(profile)
+        return {
+            "deductions": [item.model_dump(mode="json") for item in deductions]
+        }
 
-        if name == "suggest_applicable_deductions":
-            profile = self.get_profile()
-            deductions = suggest_applicable_deductions(profile)
-            return {
-                "deductions": [item.model_dump(mode="json") for item in deductions]
-            }
-
-        if name == "list_missing_information":
-            profile = self.get_profile()
-            return {"missing_fields": list_missing_information(profile)}
-
-        raise ValueError(f"Unknown tool: {name}")
+    def list_missing_information_for_profile(self) -> dict[str, Any]:
+        profile = self.get_profile()
+        return {"missing_fields": list_missing_information(profile)}
 
     def chat(self, user_message: str) -> str:
         self._session = self._session_store.append_turn(
@@ -370,54 +287,43 @@ class TaxChatbot:
         rag_tool_results: list[dict[str, Any]] = []
 
         for _ in range(self._max_tool_steps):
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-                tools=self._tool_definitions(),
-                tool_choice="auto",
-                temperature=0.1,
-                parallel_tool_calls=False,
-                user=self._user_id,
-            )
-
-            message = response.choices[0].message
-            assistant_payload = message.model_dump(exclude_none=True)
-            tool_calls = assistant_payload.get("tool_calls") or []
-
+            assistant_message = self._tool_enabled_llm.invoke(messages)
+            messages.append(assistant_message)
+            tool_calls = assistant_message.tool_calls or []
             if tool_calls:
-                messages.append(assistant_payload)
                 for tool_call in tool_calls:
-                    tool_name = tool_call["function"]["name"]
-                    raw_arguments = tool_call["function"].get("arguments") or "{}"
+                    tool_name = tool_call["name"]
+                    parsed_arguments = tool_call.get("args") or {}
+                    tool = self._tools_by_name.get(tool_name)
+                    tool_status = "success"
                     try:
-                        parsed_arguments = json.loads(raw_arguments)
-                    except json.JSONDecodeError as exc:
-                        parsed_arguments = {}
+                        if tool is None:
+                            raise ValueError(f"Unknown tool: {tool_name}")
+                        tool_result = tool.invoke(parsed_arguments)
+                    except Exception as exc:  # noqa: BLE001
+                        tool_status = "error"
                         tool_result = {
-                            "tool_error": f"Could not parse tool arguments: {exc}",
+                            "tool_error": str(exc),
                             "tool_name": tool_name,
+                            "arguments": parsed_arguments,
                         }
-                    else:
-                        try:
-                            tool_result = self._execute_tool(tool_name, parsed_arguments)
-                        except Exception as exc:  # noqa: BLE001
-                            tool_result = {
-                                "tool_error": str(exc),
-                                "tool_name": tool_name,
-                                "arguments": parsed_arguments,
-                            }
-                    if tool_name == "answer_tax_law_question" and "tool_error" not in tool_result:
+                    if (
+                        tool_name == "answer_tax_law_question"
+                        and isinstance(tool_result, dict)
+                        and "tool_error" not in tool_result
+                    ):
                         rag_tool_results.append(tool_result)
                     messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": _json_dumps(tool_result),
-                        }
+                        ToolMessage(
+                            content=_serialize_tool_result(tool_result),
+                            tool_call_id=tool_call["id"],
+                            name=tool_name,
+                            status=tool_status,
+                        )
                     )
                 continue
 
-            answer = (assistant_payload.get("content") or "").strip()
+            answer = _message_text(assistant_message.content).strip()
             if not answer:
                 answer = "I could not produce a final answer for that turn."
             elif rag_tool_results and "Sources:" not in answer:

@@ -3,15 +3,22 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
 RAG_DIR = BASE_DIR / "rag"
 DATA_DIR = BASE_DIR / "data"
 STORAGE_DIR = BASE_DIR / "storage"
-CHUNK_CATALOG_PATH = STORAGE_DIR / "chunk_catalog.jsonl"
-INGESTION_MANIFEST_PATH = STORAGE_DIR / "ingestion_manifest.json"
-USER_PROFILE_STORE_PATH = STORAGE_DIR / "user_profiles.json"
-CHAT_SESSION_STORE_PATH = STORAGE_DIR / "chat_sessions.json"
+FRONTEND_DIR = BASE_DIR / "frontend"
+DATABASE_PATH = STORAGE_DIR / "pocketca.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
+LEGACY_CHUNK_CATALOG_PATH = STORAGE_DIR / "chunk_catalog.jsonl"
+LEGACY_INGESTION_MANIFEST_PATH = STORAGE_DIR / "ingestion_manifest.json"
+LEGACY_USER_PROFILE_STORE_PATH = STORAGE_DIR / "user_profiles.json"
+LEGACY_CHAT_SESSION_STORE_PATH = STORAGE_DIR / "chat_sessions.json"
 SYSTEM_PROMPT_PATH = RAG_DIR / "system_prompt.txt"
 
 SUPPORTED_SOURCE_SUFFIXES = {".pdf"}
@@ -41,6 +48,20 @@ DEFAULT_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", DEFAULT_LLM_MODEL)
 DEFAULT_RESPONSE_MODE = os.getenv("RAG_RESPONSE_MODE", "compact")
 DEFAULT_CHAT_HISTORY_TURNS = int(os.getenv("CHAT_HISTORY_TURNS", "12"))
 DEFAULT_CHAT_TOOL_STEPS = int(os.getenv("CHAT_TOOL_STEPS", "6"))
+
+KNOWLEDGE_REBUILD_ENABLED = os.getenv(
+    "KNOWLEDGE_REBUILD_ENABLED",
+    "true",
+).lower() in {"1", "true", "yes", "on"}
+KNOWLEDGE_REBUILD_CRON = os.getenv("KNOWLEDGE_REBUILD_CRON", "0 3 * * *")
+KNOWLEDGE_REBUILD_TIMEZONE = os.getenv(
+    "KNOWLEDGE_REBUILD_TIMEZONE",
+    "Asia/Kolkata",
+)
+KNOWLEDGE_REBUILD_CLEAR_GRAPH = os.getenv(
+    "KNOWLEDGE_REBUILD_CLEAR_GRAPH",
+    "true",
+).lower() in {"1", "true", "yes", "on"}
 
 DEFAULT_FINANCIAL_YEAR = os.getenv("DEFAULT_FINANCIAL_YEAR", "FY 2025-26")
 DEFAULT_ASSESSMENT_YEAR = os.getenv("DEFAULT_ASSESSMENT_YEAR", "AY 2026-27")

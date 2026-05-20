@@ -6,7 +6,6 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from llama_index.core import Settings
 from llama_index.llms.openai import OpenAI
-from openai import OpenAI as OpenAIClient
 
 from rag.config import (
     BASE_DIR,
@@ -33,6 +32,9 @@ load_dotenv(BASE_DIR / ".env")
 
 def ensure_storage_dirs() -> None:
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    from rag.db import init_database
+
+    init_database()
 
 
 def require_openai_key() -> None:
@@ -60,12 +62,6 @@ def get_llm() -> OpenAI:
         reasoning_effort="low",
         system_prompt=load_system_prompt(),
     )
-
-
-@lru_cache(maxsize=1)
-def get_openai_chat_client() -> OpenAIClient:
-    require_openai_key()
-    return OpenAIClient(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 @lru_cache(maxsize=1)

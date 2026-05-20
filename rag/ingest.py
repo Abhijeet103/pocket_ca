@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -8,12 +7,11 @@ from typing import Iterable
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.readers.file import PyMuPDFReader
 
+from rag.catalog_store import ChunkCatalogStore, IngestionRunStore
 from rag.config import (
-    CHUNK_CATALOG_PATH,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     DATA_DIR,
-    INGESTION_MANIFEST_PATH,
     NEO4J_DATABASE,
     SUPPORTED_SOURCE_SUFFIXES,
 )
@@ -140,9 +138,7 @@ def build_graph_documents(records: list[ChunkCatalogRecord]) -> list[dict]:
 
 
 def persist_chunk_catalog(records: list[ChunkCatalogRecord]) -> None:
-    with CHUNK_CATALOG_PATH.open("w", encoding="utf-8") as file_obj:
-        for record in records:
-            file_obj.write(record.model_dump_json() + "\n")
+    ChunkCatalogStore().replace_all(records)
 
 
 def persist_ingestion_manifest(
@@ -151,18 +147,13 @@ def persist_ingestion_manifest(
     page_count: int,
     chunk_count: int,
 ) -> None:
-    manifest = {
-        "backend": "graph_rag",
-        "source_files": [str(path.resolve()) for path in source_files],
-        "document_count": document_count,
-        "page_count": page_count,
-        "chunk_count": chunk_count,
-        "neo4j_database": NEO4J_DATABASE,
-        "chunk_catalog_path": str(CHUNK_CATALOG_PATH),
-    }
-    INGESTION_MANIFEST_PATH.write_text(
-        json.dumps(manifest, indent=2),
-        encoding="utf-8",
+    IngestionRunStore().record_run(
+        backend="graph_rag",
+        source_files=[str(path.resolve()) for path in source_files],
+        document_count=document_count,
+        page_count=page_count,
+        chunk_count=chunk_count,
+        neo4j_database=NEO4J_DATABASE,
     )
 
 

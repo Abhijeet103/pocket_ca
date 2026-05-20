@@ -5,7 +5,7 @@ from collections import Counter
 
 from rag.config import MAX_KEYWORDS_PER_CHUNK
 
-
+# spacy
 STOPWORDS = {
     "a",
     "an",
@@ -47,6 +47,8 @@ STOPWORDS = {
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
 
+# Chunk --->  remove all spaces
+
 
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
@@ -54,6 +56,8 @@ def normalize_text(text: str) -> str:
 
 def tokenize(text: str) -> list[str]:
     return [token.lower() for token in TOKEN_PATTERN.findall(text)]
+
+
 
 
 def extract_keywords(

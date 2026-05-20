@@ -94,3 +94,5 @@ def format_citations(citations: Sequence[Citation]) -> str:
             f"{citation.section_title or 'Unknown'}"
         )
     return "\n".join(lines)
+
+
